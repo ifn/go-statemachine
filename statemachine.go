@@ -102,6 +102,7 @@ const (
 	cmdOff
 	cmdIsHandlerAssigned
 	cmdEmit
+	cmdGetState
 	cmdSetState
 	cmdTerminate
 )
@@ -176,7 +177,7 @@ type emitArgs struct {
 	ch chan<- error
 }
 
-// Emit an event. 
+// Emit an event.
 func (sm *StateMachine) Emit(event *Event) error {
 	errCh := make(chan error, 1)
 	err := sm.send(&command{
@@ -189,9 +190,23 @@ func (sm *StateMachine) Emit(event *Event) error {
 	return <-errCh
 }
 
-// SetState -------------------------------------------------------------------
+// GetState & SetState --------------------------------------------------------
 
-// SetState changes the internal state machine state, nothing more, nothing less.
+// GetState returns the internal state machine state.
+func (sm *StateMachine) GetState() (st State, err error) {
+	replyCh := make(chan State, 1)
+	err = sm.send(&command{
+		cmdGetState,
+		replyCh,
+	})
+	if err != nil {
+		return
+	}
+	st = <-replyCh
+	return
+}
+
+// SetState changes the internal state machine state.
 func (sm *StateMachine) SetState(state State) error {
 	return sm.send(&command{
 		cmdSetState,
@@ -252,6 +267,10 @@ func (sm *StateMachine) loop() {
 			sm.state = next
 		case cmdSetState:
 			sm.state = cmd.args.(State)
+		case cmdGetState:
+			replyCh := cmd.args.(chan State)
+			replyCh <- sm.state
+			close(replyCh)
 		case cmdOn:
 			args := cmd.args.(*onArgs)
 			sm.handlers[args.s][args.t] = args.h
