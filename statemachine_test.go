@@ -177,6 +177,12 @@ func ExampleStateMachine() {
 
 // Tests ----------------------------------------------------------------------
 
+func changeStateTo(s State) EventHandler {
+	return func(State, *Event) State {
+		return s
+	}
+}
+
 func forwardState(s State, e *Event) State {
 	return s
 }
@@ -268,6 +274,37 @@ func TestStateMachine_Emit(t *testing.T) {
 		break
 	case <-time.After(time.Second):
 		t.Error("Test timed out")
+	}
+}
+
+func TestStateMachine_GetState(t *testing.T) {
+	sm := New(stateStopped, 3, 3)
+	defer sm.Terminate()
+
+	stExp := stateStopped
+	st, err := sm.GetState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st != stExp {
+		t.Fatalf("expected state: %s, got: %s", stateToString(stExp), stateToString(st))
+	}
+
+	sm.On(cmdRun, []State{
+		stateStopped,
+	}, changeStateTo(stateRunning))
+
+	if err := sm.Emit(&Event{cmdRun, nil}); err != nil {
+		t.Fatal(err)
+	}
+
+	stExp = stateRunning
+	st, err = sm.GetState()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st != stExp {
+		t.Fatalf("expected state: %s, got: %s", stateToString(stExp), stateToString(st))
 	}
 }
 
