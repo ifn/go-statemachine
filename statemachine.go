@@ -49,7 +49,9 @@ type Event struct {
 //
 // If an event is emitted in a state where no handler is defined,
 // ErrIllegalEvent is returned.
-type EventHandler func(s State, e *Event) (next State)
+type TransitionFunction func(s State, e *Event) (next State)
+
+type Trigger func()
 
 // StateMachine is the only struct this package exports. Once an event is
 // emitted on a StateMachine, the relevant handler is fetched and invoked.
@@ -63,8 +65,8 @@ type StateMachine struct {
 	// Internal StateMachine state
 	state State
 
-	// Registered event handlers
-	handlers [][]EventHandler
+	// Registered transition functions
+	tfuncs [][]TransitionFunction
 
 	// Communication channels
 	cmdCh        chan *command // Send commands to the background loop
@@ -77,14 +79,14 @@ type StateMachine struct {
 // states and events.
 func New(initState State, stateCount, eventCount uint) *StateMachine {
 	// Allocate enough space for the handlers.
-	table := make([][]EventHandler, stateCount)
+	table := make([][]TransitionFunction, stateCount)
 	for i := range table {
-		table[i] = make([]EventHandler, eventCount)
+		table[i] = make([]TransitionFunction, eventCount)
 	}
 
 	sm := StateMachine{
 		state:        initState,
-		handlers:     table,
+		tfuncs:       table,
 		cmdCh:        make(chan *command),
 		terminatedCh: make(chan struct{}),
 	}
@@ -115,17 +117,17 @@ type command struct {
 // On -------------------------------------------------------------------------
 
 type onArgs struct {
-	s State
-	t EventType
-	h EventHandler
+	s  State
+	t  EventType
+	tf TransitionFunction
 }
 
 // Register an event handler. Only one handler can be set per state and event.
-func (sm *StateMachine) On(t EventType, ss []State, h EventHandler) error {
+func (sm *StateMachine) On(t EventType, ss []State, tf TransitionFunction) error {
 	for _, s := range ss {
 		if err := sm.send(&command{
 			cmdOn,
-			&onArgs{s, t, h},
+			&onArgs{s, t, tf},
 		}); err != nil {
 			return err
 		}
@@ -248,6 +250,9 @@ func (sm *StateMachine) send(cmd *command) error {
 	}
 }
 
+func (sm *StateMachine) invokeTriggers() {
+}
+
 // The internal event loop processes events (commands) passed to it in
 // a sequential manner.
 func (sm *StateMachine) loop() {
@@ -256,15 +261,20 @@ func (sm *StateMachine) loop() {
 		switch cmd.cmd {
 		case cmdEmit:
 			args := cmd.args.(*emitArgs)
-			handler := sm.handlers[sm.state][args.e.Type]
-			if handler == nil {
+			tfunc := sm.tfuncs[sm.state][args.e.Type]
+			if tfunc == nil {
 				args.ch <- ErrIllegalEvent
 				close(args.ch)
 				continue
 			}
 			close(args.ch)
-			next := handler(sm.state, args.e)
+
+			sm.invokeTriggers()
+
+			next := tfunc(sm.state, args.e)
 			sm.state = next
+
+			sm.invokeTriggers()
 		case cmdSetState:
 			sm.state = cmd.args.(State)
 		case cmdGetState:
@@ -273,13 +283,13 @@ func (sm *StateMachine) loop() {
 			close(replyCh)
 		case cmdOn:
 			args := cmd.args.(*onArgs)
-			sm.handlers[args.s][args.t] = args.h
+			sm.tfuncs[args.s][args.t] = args.tf
 		case cmdOff:
 			args := cmd.args.(*offArgs)
-			sm.handlers[args.s][args.t] = nil
+			sm.tfuncs[args.s][args.t] = nil
 		case cmdIsHandlerAssigned:
 			args := cmd.args.(*isHandlerAssignedArgs)
-			args.ch <- (sm.handlers[args.s][args.t] != nil)
+			args.ch <- (sm.tfuncs[args.s][args.t] != nil)
 			close(args.ch)
 		case cmdTerminate:
 			close(sm.terminatedCh)

@@ -177,7 +177,7 @@ func ExampleStateMachine() {
 
 // Tests ----------------------------------------------------------------------
 
-func changeStateTo(s State) EventHandler {
+func changeStateTo(s State) TransitionFunction {
 	return func(State, *Event) State {
 		return s
 	}
