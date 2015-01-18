@@ -204,24 +204,24 @@ func TestStateMachine_On(t *testing.T) {
 	}
 }
 
-func TestStateMachine_Off(t *testing.T) {
-	sm := New(stateStopped, 3, 3)
-	defer sm.Terminate()
-
-	sm.On(cmdRun, []State{
-		stateStopped,
-	}, forwardState)
-
-	sm.Off(cmdRun, stateStopped)
-
-	ok, err := sm.IsHandlerAssigned(cmdRun, stateStopped)
-	if err != nil {
-		t.Error(err)
-	}
-	if ok {
-		t.Fail()
-	}
-}
+//func TestStateMachine_Off(t *testing.T) {
+//	sm := New(stateStopped, 3, 3)
+//	defer sm.Terminate()
+//
+//	sm.On(cmdRun, []State{
+//		stateStopped,
+//	}, forwardState)
+//
+//	sm.Off(cmdRun, stateStopped)
+//
+//	ok, err := sm.IsHandlerAssigned(cmdRun, stateStopped)
+//	if err != nil {
+//		t.Error(err)
+//	}
+//	if ok {
+//		t.Fail()
+//	}
+//}
 
 func TestStateMachine_IsHandlerAssigned(t *testing.T) {
 	sm := New(stateStopped, 3, 3)

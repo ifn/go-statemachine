@@ -22,6 +22,7 @@
 package statemachine
 
 import (
+	"container/list"
 	"errors"
 )
 
@@ -64,7 +65,7 @@ type StateMachine struct {
 	state State
 
 	// Registered event handlers
-	handlers [][]EventHandler
+	handlers [][]*list.List
 
 	// Communication channels
 	cmdCh        chan *command // Send commands to the background loop
@@ -77,9 +78,14 @@ type StateMachine struct {
 // states and events.
 func New(initState State, stateCount, eventCount uint) *StateMachine {
 	// Allocate enough space for the handlers.
-	table := make([][]EventHandler, stateCount)
+	table := make([][]*list.List, stateCount)
+
 	for i := range table {
-		table[i] = make([]EventHandler, eventCount)
+		table[i] = make([]*list.List, eventCount)
+
+		for j := range table[i] {
+			table[i][j] = list.New()
+		}
 	}
 
 	sm := StateMachine{
@@ -248,6 +254,23 @@ func (sm *StateMachine) send(cmd *command) error {
 	}
 }
 
+func (sm *StateMachine) handleEmit(args *emitArgs) {
+	hChain := sm.handlers[sm.state][args.e.Type]
+
+	if hChain.Len() == 0 {
+		args.ch <- ErrIllegalEvent
+		close(args.ch)
+		return
+	}
+	close(args.ch)
+
+	for e := hChain.Front(); e != nil; e = e.Next() {
+		handler := e.Value.(EventHandler)
+
+		sm.state = handler(sm.state, args.e)
+	}
+}
+
 // The internal event loop processes events (commands) passed to it in
 // a sequential manner.
 func (sm *StateMachine) loop() {
@@ -255,16 +278,7 @@ func (sm *StateMachine) loop() {
 		cmd := <-sm.cmdCh
 		switch cmd.cmd {
 		case cmdEmit:
-			args := cmd.args.(*emitArgs)
-			handler := sm.handlers[sm.state][args.e.Type]
-			if handler == nil {
-				args.ch <- ErrIllegalEvent
-				close(args.ch)
-				continue
-			}
-			close(args.ch)
-			next := handler(sm.state, args.e)
-			sm.state = next
+			sm.handleEmit(cmd.args.(*emitArgs))
 		case cmdSetState:
 			sm.state = cmd.args.(State)
 		case cmdGetState:
@@ -273,13 +287,13 @@ func (sm *StateMachine) loop() {
 			close(replyCh)
 		case cmdOn:
 			args := cmd.args.(*onArgs)
-			sm.handlers[args.s][args.t] = args.h
+			sm.handlers[args.s][args.t].PushBack(args.h)
 		case cmdOff:
-			args := cmd.args.(*offArgs)
-			sm.handlers[args.s][args.t] = nil
+			//args := cmd.args.(*offArgs)
+			//sm.handlers[args.s][args.t] = nil
 		case cmdIsHandlerAssigned:
 			args := cmd.args.(*isHandlerAssignedArgs)
-			args.ch <- (sm.handlers[args.s][args.t] != nil)
+			args.ch <- (sm.handlers[args.s][args.t].Len() != 0)
 			close(args.ch)
 		case cmdTerminate:
 			close(sm.terminatedCh)
