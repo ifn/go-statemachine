@@ -118,7 +118,7 @@ type command struct {
 	args interface{}
 }
 
-// On -------------------------------------------------------------------------
+// On & OnChain ---------------------------------------------------------------
 
 type onArgs struct {
 	s State
@@ -126,13 +126,23 @@ type onArgs struct {
 	h EventHandler
 }
 
-// Register an event handler. Only one handler can be set per state and event.
+// Register an event handler.
 func (sm *StateMachine) On(t EventType, ss []State, h EventHandler) error {
 	for _, s := range ss {
 		if err := sm.send(&command{
 			cmdOn,
 			&onArgs{s, t, h},
 		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Register the chain of event handlers.
+func (sm *StateMachine) OnChain(t EventType, ss []State, hs []EventHandler) error {
+	for _, h := range hs {
+		if err := sm.On(t, ss, h); err != nil {
 			return err
 		}
 	}
